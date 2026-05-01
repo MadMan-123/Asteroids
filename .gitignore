@@ -1,0 +1,43 @@
+# Build artifacts
+build/
+bin/
+*.obj
+*.o
+*.a
+*.lib
+*.exp
+*.dll
+*.exe
+*.ilk
+*.pdb
+
+# IDE
+.vs/
+.vscode/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor backups
+*~
+*.swp
+*.swo
+
+# Dependencies installed locally
+deps/bin/
+deps/lib/
+
+# Runtime files
+__play_snapshot__.drsc
+*.drsc
