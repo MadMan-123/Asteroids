@@ -9,7 +9,7 @@ extern "C" {
 // DRUID_FLAGS 0x0C
 // isBuffered
 // isPhysicsBody
-#define POOL_CAPACITY 1000
+#define POOL_CAPACITY 100000
 
 #define ASTEROID_FIELDS(FIELD) \
     FIELD(ASTEROID_ALIVE, "Alive", b8, COLD) \
@@ -41,14 +41,13 @@ extern "C" {
 DECLARE_ARCHETYPE(Asteroid, ASTEROID_FIELDS)
 // <DRUID_GEN_END Asteroid>
 
-DSAPI void asteroidInit(void);
-DSAPI void asteroidUpdate(Archetype *arch, f32 dt);
-DSAPI void asteroidRender(Archetype *arch, Renderer *r);
-DSAPI void asteroidDestroy(void);
+DSAPI void      asteroidInit(Archetype *arch);
+DSAPI void      asteroidUpdate(Archetype *arch, f32 dt);
+DSAPI void      asteroidDestroy(void);
+DSAPI Archetype *asteroidGetArchetype(void);
+DSAPI void      asteroidSpawn(Vec3 position, Vec3 velocity);
 
 DSAPI void druidGetECSSystem_Asteroid(ECSSystemPlugin *out);
-
-DSAPI void asteroidSpawn(Vec3 position);
 
 #ifdef __cplusplus
 }

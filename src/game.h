@@ -29,8 +29,6 @@ typedef struct GamePlugin {
 } GamePlugin;
 
 
-Archetype* asteroidArchetype;
-
 
 
 #ifdef __cplusplus
@@ -40,6 +38,7 @@ extern "C" {
 
 
 GAME_API void druidGetPlugin(GamePlugin *out);
+GAME_API u32  druidGetGameArchetypes(Archetype **out, u32 max);
 
 #ifdef __cplusplus
 }
