@@ -1,5 +1,6 @@
 #define DRUID_SYSTEM_EXPORT
 #include "Crystal.h"
+#include "GameAudio.h"
 #include <math.h>
 
 #define COLLECTION_RADIUS   40.0f
@@ -25,6 +26,10 @@ void crystalUpdate(Archetype *arch, f32 dt)
     if (!arch) return;
     Vec4 dRot = quatFromAxisAngle(s_spinAxis, CRYSTAL_SPIN_RATE * dt);
 
+    // Track nearest live crystal for whisper audio
+    f32  nearestDistSq = 1e30f;
+    Vec3 nearestPos    = {0.0f, 0.0f, 0.0f};
+
     for (u32 c = 0; c < arch->activeChunkCount; c++)
     {
         void **fields = getArchetypeFields(arch, c);
@@ -32,13 +37,28 @@ void crystalUpdate(Archetype *arch, f32 dt)
         u32   count = arch->arena[c].count;
         b8   *alive = (b8  *)fields[CRYSTAL_ALIVE];
         Vec4 *rot   = (Vec4*)fields[CRYSTAL_ROTATION];
+        f32  *posX  = (f32 *)fields[CRYSTAL_POSITION_X];
+        f32  *posY  = (f32 *)fields[CRYSTAL_POSITION_Y];
+        f32  *posZ  = (f32 *)fields[CRYSTAL_POSITION_Z];
 
         for (u32 i = 0; i < count; i++)
         {
             if (!alive[i]) continue;
             rot[i] = quatNormalize(quatMul(rot[i], dRot));
+
+            // Listener position comes from setAudioListener — use (0,0,0) as fallback;
+            // real distance comparison via GameAudio handles the max-range gate.
+            f32 dx = posX[i], dy = posY[i], dz = posZ[i];
+            f32 dSq = dx*dx + dy*dy + dz*dz;
+            if (dSq < nearestDistSq)
+            {
+                nearestDistSq = dSq;
+                nearestPos = (Vec3){posX[i], posY[i], posZ[i]};
+            }
         }
     }
+
+    gameAudioTickWhispers(dt, sqrtf(nearestDistSq > 0.0f ? nearestDistSq : 0.0f), nearestPos);
 }
 
 void crystalDestroy(void)
@@ -116,6 +136,7 @@ void crystalCheckCollection(f32 playerX, f32 playerY, f32 playerZ)
             {
                 archetypePoolDespawn(s_arch, c * s_arch->chunkCapacity + i);
                 s_collected++;
+                gameAudioCrystalCollect();
                 INFO("[crystal] collected %u", s_collected);
             }
         }

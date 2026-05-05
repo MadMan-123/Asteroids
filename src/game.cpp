@@ -11,6 +11,10 @@ static Archetype g_shipArch     = {0};
 static Archetype g_laserArch    = {0};
 static Archetype g_crystalArch  = {0};
 
+static b8 g_requestQuit = 0;
+extern "C" void gameSignalQuit(void) { g_requestQuit = 1; }
+static b8 gameRequestsQuit(void) { b8 r = g_requestQuit; g_requestQuit = 0; return r; }
+
 static u32 s_randomSeed = 12345u;
 static f32 randomFloat(f32 min, f32 max)
 {
@@ -102,6 +106,9 @@ static void gameInit(const c8 *projectDir)
         }
     }
 
+    setMusicVolume(0.3f);
+    playMusic("asteroidIDM.mp3", 1);
+
     // Burst-spawn 10k asteroids in a 2000-unit shell around the origin
     for (u32 i = 0; i < 10000; i++)
     {
@@ -169,6 +176,7 @@ static void gameDestroy(void)
     crystalDestroy();
     destroyArchetype(&g_crystalArch);
 
+    stopMusic();
     runtimeDestroy(runtime);
 }
 
@@ -184,8 +192,9 @@ u32 druidGetGameArchetypes(Archetype **out, u32 max)
 
 void druidGetPlugin(GamePlugin *out)
 {
-    out->init    = gameInit;
-    out->update  = gameUpdate;
-    out->render  = gameRender;
-    out->destroy = gameDestroy;
+    out->init         = gameInit;
+    out->update       = gameUpdate;
+    out->render       = gameRender;
+    out->destroy      = gameDestroy;
+    out->requestsQuit = gameRequestsQuit;
 }

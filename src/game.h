@@ -26,6 +26,7 @@ typedef struct GamePlugin {
     PluginUpdateFn  update;
     PluginRenderFn  render;
     PluginDestroyFn destroy;
+    b8 (*requestsQuit)(void); // game sets this; editor calls doStopGame(), standalone pushes SDL_EVENT_QUIT
 } GamePlugin;
 
 

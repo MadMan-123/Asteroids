@@ -1,10 +1,13 @@
 #define DRUID_SYSTEM_EXPORT
 #include "Spaceship.h"
+#include "GameAudio.h"
+#include <SDL3/SDL_events.h>
 // Forward declarations — avoid DECLARE_ARCHETYPE expansion from .h files
 // which would create duplicate dllexport symbols across .obj files
 extern void asteroidSetPlayerPos(Vec3 pos);
 extern f32  asteroidConsumePlayerHit(Vec3 *outPush);
 extern void laserFire(Vec3 position, Vec3 direction);
+extern void gameSignalQuit(void);
 
 DEFINE_ARCHETYPE(Spaceship, SPACESHIP_FIELDS)
 
@@ -15,12 +18,15 @@ DEFINE_ARCHETYPE(Spaceship, SPACESHIP_FIELDS)
 #define FIRE_COOLDOWN           0.15f
 #define PLAYER_MAX_HEALTH      100.0f
 #define PLAYER_HIT_COOLDOWN      1.5f
+#define DEATH_DURATION           3.5f
 
 static Archetype *s_arch        = NULL;
 static f32        s_fireCooldown = 0.0f;
 static i8         s_fireSign     = -1;
 static f32        s_health       = PLAYER_MAX_HEALTH;
 static f32        s_hitTimer     = 0.0f;
+static b8         s_dead         = 0;
+static f32        s_deathTimer   = 0.0f;
 
 void shipInit(Archetype *arch)
 {
@@ -53,6 +59,54 @@ void shipUpdate(Archetype *arch, f32 dt)
     if (AngularDamping[0] == 0.0f) AngularDamping[0] = ANGULAR_DAMPING_DEFAULT;
 
     //-------------------------------------------------------------------------
+    // Death sequence — spins out and quits after DEATH_DURATION seconds
+
+    if (s_dead)
+    {
+        s_deathTimer += dt;
+
+        // Spin accelerates over time on all three axes
+        f32 spinRamp = 1.0f + s_deathTimer * 4.0f;
+        YawRate[0]   += 2.1f * spinRamp * dt;
+        PitchRate[0] += 1.7f * spinRamp * dt;
+        RollRate[0]  += 2.5f * spinRamp * dt;
+
+        // No linear damping — ship drifts freely
+        Vec3 localUp    = quatRotateVec3(Rot[0], v3Up);
+        Vec3 localRight = quatRotateVec3(Rot[0], v3Right);
+        Vec3 localFwd   = quatRotateVec3(Rot[0], v3Forward);
+        Vec4 dYaw   = quatFromAxisAngle(localUp,    YawRate[0]   * dt);
+        Vec4 dPitch = quatFromAxisAngle(localRight, PitchRate[0] * dt);
+        Vec4 dRoll  = quatFromAxisAngle(localFwd,   RollRate[0]  * dt);
+        Rot[0] = quatNormalize(quatMul(dRoll, quatMul(dPitch, quatMul(dYaw, Rot[0]))));
+
+        PosX[0] += VelX[0] * dt;
+        PosY[0] += VelY[0] * dt;
+        PosZ[0] += VelZ[0] * dt;
+
+        if (runtime && runtime->camera)
+        {
+            runtime->camera->pos         = (Vec3){PosX[0], PosY[0], PosZ[0]};
+            runtime->camera->orientation = Rot[0];
+        }
+
+        if (s_deathTimer >= DEATH_DURATION)
+        {
+            if (runtime && runtime->standaloneMode)
+            {
+                SDL_Event quitEvent = {0};
+                quitEvent.type = SDL_EVENT_QUIT;
+                SDL_PushEvent(&quitEvent);
+            }
+            else
+            {
+                gameSignalQuit();
+            }
+        }
+        return;
+    }
+
+    //-------------------------------------------------------------------------
     // Consume any asteroid collision damage queued by last frame's asteroidUpdate
 
     Vec3 hitPush = {0.0f, 0.0f, 0.0f};
@@ -64,11 +118,15 @@ void shipUpdate(Archetype *arch, f32 dt)
         VelY[0]    += hitPush.y;
         VelZ[0]    += hitPush.z;
         s_hitTimer  = PLAYER_HIT_COOLDOWN;
+        gameAudioShipHit();
         INFO("[ship] hit! health=%.0f", s_health);
         if (s_health <= 0.0f)
         {
-            s_health = PLAYER_MAX_HEALTH;
-            INFO("[ship] destroyed!");
+            s_dead       = 1;
+            s_deathTimer = 0.0f;
+            gameAudioShipDeath();
+            INFO("[ship] destroyed — crashing");
+            return;
         }
     }
 
@@ -142,6 +200,15 @@ void shipUpdate(Archetype *arch, f32 dt)
     PosZ[0] += VelZ[0] * dt;
 
     //-------------------------------------------------------------------------
+    // Audio — listener position + thrust loop
+
+    Vec3 shipPos3 = {PosX[0], PosY[0], PosZ[0]};
+    gameAudioSetListener(shipPos3);
+
+    b8 thrusting = (thrustFwd != 0.0f || thrustRight != 0.0f || thrustUp != 0.0f);
+    gameAudioThrust(thrusting, boostL2 > 0.1f, dt);
+
+    //-------------------------------------------------------------------------
     // Notify asteroid system of player position for attraction + collision
 
     asteroidSetPlayerPos((Vec3){PosX[0], PosY[0], PosZ[0]});
@@ -175,6 +242,7 @@ void shipUpdate(Archetype *arch, f32 dt)
         Vec3 offset = v3Add(muzzle, v3Scale(right, s_fireSign * 5.0f));
         s_fireSign  = -s_fireSign;
 
+        gameAudioLaser(offset);
         laserFire(offset, fwd);
         s_fireCooldown = FIRE_COOLDOWN;
     }
@@ -211,8 +279,10 @@ void shipSpawn(Vec3 position)
     ((f32  *)fields[SHIP_THRUST_FORCE]      )[0] = THRUST_FORCE_DEFAULT;
     ((f32  *)fields[SHIP_ANGULAR_ACCEL]     )[0] = ANGULAR_ACCEL_DEFAULT;
     ((f32  *)fields[SHIP_ANGULAR_DAMPING]   )[0] = ANGULAR_DAMPING_DEFAULT;
-    s_health   = PLAYER_MAX_HEALTH;
-    s_hitTimer = 0.0f;
+    s_health      = PLAYER_MAX_HEALTH;
+    s_hitTimer    = 0.0f;
+    s_dead        = 0;
+    s_deathTimer  = 0.0f;
 }
 
 static void shipInitPlugin(void) {}

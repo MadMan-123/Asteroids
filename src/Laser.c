@@ -1,6 +1,7 @@
 #define DRUID_SYSTEM_EXPORT
 #include "Laser.h"
 #include "Asteroid.h"
+#include "GameAudio.h"
 #include <math.h>
 
 #define LASER_PUSH 15.0f
@@ -164,8 +165,16 @@ void laserCheckCollisions(Archetype *asteroids)
                         }
 
                         aHealth[ai] -= 1.0f;
+                        Vec3 aPos = {aPosX[ai], aPosY[ai], aPosZ[ai]};
                         if (aHealth[ai] <= 0.0f)
+                        {
+                            gameAudioAsteroidDestroy(aPos);
                             archetypePoolDespawn(asteroids, ac * asteroids->chunkCapacity + ai);
+                        }
+                        else
+                        {
+                            gameAudioAsteroidImpact(aPos);
+                        }
 
                         archetypePoolDespawn(s_arch, lc * s_arch->chunkCapacity + li);
                         goto next_laser;

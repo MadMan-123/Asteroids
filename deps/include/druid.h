@@ -1932,6 +1932,7 @@ extern "C"
         f32               masterVol;
         f32               sfxVol;
         f32               musicVol;
+        Vec3              listenerPos;  // world-space ear position, updated by setAudioListener
     } AudioSystem;
 
     DAPI extern AudioSystem *audio;
@@ -1951,6 +1952,11 @@ extern "C"
     DAPI void setMasterVolume(f32 v);
     DAPI void setSfxVolume(f32 v);
     DAPI void setMusicVolume(f32 v);
+
+    // Spatial audio — call setAudioListener once per frame with the camera/player position.
+    // playSoundAt attenuates volume by inverse-square falloff; returns -1 if out of range.
+    DAPI void setAudioListener(Vec3 pos);
+    DAPI i32  playSoundAt(const c8 *name, Vec3 pos, f32 maxDist, f32 baseVolume);
 
     // keys
     // keyboard keys enum
