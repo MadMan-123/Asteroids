@@ -26,6 +26,7 @@ extern "C" {
 DECLARE_ARCHETYPE(Laser, LASER_FIELDS)
 // <DRUID_GEN_END Laser>
 
+DSAPI StructLayout *laserGetLayout(void);
 DSAPI void      laserInit(Archetype *arch);
 DSAPI void      laserUpdate(Archetype *arch, f32 dt);
 DSAPI void      laserDestroy(void);

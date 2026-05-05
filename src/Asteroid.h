@@ -36,16 +36,21 @@ extern "C" {
     FIELD(ASTEROID_COLLIDER_HALF_Z, "ColliderHalfZ", f32, COLD) \
     FIELD(ASTEROID_COLLIDER_OFFSET_X, "ColliderOffsetX", f32, COLD) \
     FIELD(ASTEROID_COLLIDER_OFFSET_Y, "ColliderOffsetY", f32, COLD) \
-    FIELD(ASTEROID_COLLIDER_OFFSET_Z, "ColliderOffsetZ", f32, COLD)
+    FIELD(ASTEROID_COLLIDER_OFFSET_Z, "ColliderOffsetZ", f32, COLD) \
+    FIELD(ASTEROID_HEALTH,            "Health",          f32, COLD) \
+    FIELD(ASTEROID_HIT_TIMER,         "HitTimer",        f32, COLD)
 
 DECLARE_ARCHETYPE(Asteroid, ASTEROID_FIELDS)
 // <DRUID_GEN_END Asteroid>
 
+DSAPI StructLayout *asteroidGetLayout(void);
 DSAPI void      asteroidInit(Archetype *arch);
 DSAPI void      asteroidUpdate(Archetype *arch, f32 dt);
 DSAPI void      asteroidDestroy(void);
 DSAPI Archetype *asteroidGetArchetype(void);
 DSAPI void      asteroidSpawn(Vec3 position, Vec3 velocity);
+DSAPI void      asteroidSetPlayerPos(Vec3 pos);
+DSAPI f32       asteroidConsumePlayerHit(Vec3 *outPush);
 
 DSAPI void druidGetECSSystem_Asteroid(ECSSystemPlugin *out);
 

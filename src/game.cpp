@@ -2,12 +2,14 @@
 #include "Asteroid.h"
 #include "Spaceship.h"
 #include "Laser.h"
+#include "Crystal.h"
 #include <math.h>
 #include <stdlib.h>
 
 static Archetype g_asteroidArch = {0};
 static Archetype g_shipArch     = {0};
 static Archetype g_laserArch    = {0};
+static Archetype g_crystalArch  = {0};
 
 static u32 s_randomSeed = 12345u;
 static f32 randomFloat(f32 min, f32 max)
@@ -24,14 +26,14 @@ static void gameInit(const c8 *projectDir)
     config.gravity.y = 0.0f;
     config.gravity.z = 0.0f;
     config.camNear   = 0.1f;
-    config.camFar    = 5000.0f;
+    config.camFar    = 20000.0f;
     runtimeCreate(projectDir, config);
 
     // Asteroid archetype — buffered pool + physics
     g_asteroidArch.flags = 0;
     FLAG_SET(g_asteroidArch.flags, ARCH_BUFFERED);
     FLAG_SET(g_asteroidArch.flags, ARCH_PHYSICS_BODY);
-    if (!createArchetype(&Asteroid_layout, POOL_CAPACITY, &g_asteroidArch))
+    if (!createArchetype(asteroidGetLayout(), POOL_CAPACITY, &g_asteroidArch))
     {
         ERROR("Failed to create Asteroid archetype");
         return;
@@ -43,7 +45,7 @@ static void gameInit(const c8 *projectDir)
     g_shipArch.flags = 0;
     FLAG_SET(g_shipArch.flags, ARCH_SINGLE);
     FLAG_SET(g_shipArch.flags, ARCH_PHYSICS_BODY);
-    if (!createArchetype(&Spaceship_layout, 1, &g_shipArch))
+    if (!createArchetype(shipGetLayout(), 1, &g_shipArch))
     {
         ERROR("Failed to create Spaceship archetype");
         return;
@@ -57,13 +59,48 @@ static void gameInit(const c8 *projectDir)
     // Laser archetype — buffered pool, no physics
     g_laserArch.flags = 0;
     FLAG_SET(g_laserArch.flags, ARCH_BUFFERED);
-    if (!createArchetype(&Laser_layout, LASER_POOL_CAPACITY, &g_laserArch))
+    if (!createArchetype(laserGetLayout(), LASER_POOL_CAPACITY, &g_laserArch))
     {
         ERROR("Failed to create Laser archetype");
         return;
     }
     laserInit(&g_laserArch);
     runtimeRegisterArchetype(runtime, &g_laserArch);
+
+    // Crystal archetype — buffered pool, no physics
+    // Requires a Crystal prefab configured in the editor (slot 0), same as Laser/Asteroid
+    g_crystalArch.flags = 0;
+    FLAG_SET(g_crystalArch.flags, ARCH_BUFFERED);
+    if (!createArchetype(crystalGetLayout(), CRYSTAL_POOL_CAPACITY, &g_crystalArch))
+    {
+        ERROR("Failed to create Crystal archetype");
+        return;
+    }
+    crystalInit(&g_crystalArch);
+    runtimeRegisterArchetype(runtime, &g_crystalArch);
+
+    // Spawn 300 crystals in 20 clusters at 1000-4000 units — spread beyond asteroid field
+    for (u32 cluster = 0; cluster < 20; cluster++)
+    {
+        f32  theta  = randomFloat(0.0f, 6.28318f);
+        f32  phi    = randomFloat(0.0f, 3.14159f);
+        f32  radius = randomFloat(1000.0f, 4000.0f);
+        f32  sinPhi = sinf(phi);
+        Vec3 center = {
+            sinPhi * cosf(theta) * radius,
+            sinPhi * sinf(theta) * radius,
+            cosf(phi)            * radius,
+        };
+        for (u32 j = 0; j < 15; j++)
+        {
+            Vec3 pos = {
+                center.x + randomFloat(-80.0f, 80.0f),
+                center.y + randomFloat(-80.0f, 80.0f),
+                center.z + randomFloat(-80.0f, 80.0f),
+            };
+            crystalSpawn(pos, randomFloat(0.06f, 0.10f));
+        }
+    }
 
     // Burst-spawn 10k asteroids in a 2000-unit shell around the origin
     for (u32 i = 0; i < 10000; i++)
@@ -97,6 +134,16 @@ static void gameUpdate(f32 dt)
     asteroidUpdate(&g_asteroidArch, dt);
     laserUpdate(&g_laserArch, dt);
     laserCheckCollisions(&g_asteroidArch);
+    crystalUpdate(&g_crystalArch, dt);
+
+    if (g_shipArch.arena && g_shipArch.arena[0].count > 0)
+    {
+        void **sf = getArchetypeFields(&g_shipArch, 0);
+        if (sf)
+            crystalCheckCollection(((f32*)sf[SHIP_POSITION_X])[0],
+                                   ((f32*)sf[SHIP_POSITION_Y])[0],
+                                   ((f32*)sf[SHIP_POSITION_Z])[0]);
+    }
 }
 
 static void gameRender(f32 dt)
@@ -104,6 +151,7 @@ static void gameRender(f32 dt)
     runtimeBeginScenePass(runtime, dt);
     rendererDefaultArchetypeRender(&g_asteroidArch, renderer);
     rendererDefaultArchetypeRender(&g_laserArch, renderer);
+    rendererDefaultArchetypeRender(&g_crystalArch, renderer);
     runtimeEndScenePass(runtime);
 }
 
@@ -118,6 +166,9 @@ static void gameDestroy(void)
     laserDestroy();
     destroyArchetype(&g_laserArch);
 
+    crystalDestroy();
+    destroyArchetype(&g_crystalArch);
+
     runtimeDestroy(runtime);
 }
 
@@ -127,6 +178,7 @@ u32 druidGetGameArchetypes(Archetype **out, u32 max)
     if (n < max && g_asteroidArch.arena) out[n++] = &g_asteroidArch;
     if (n < max && g_shipArch.arena)     out[n++] = &g_shipArch;
     if (n < max && g_laserArch.arena)    out[n++] = &g_laserArch;
+    if (n < max && g_crystalArch.arena)  out[n++] = &g_crystalArch;
     return n;
 }
 

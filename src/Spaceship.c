@@ -1,6 +1,10 @@
 #define DRUID_SYSTEM_EXPORT
 #include "Spaceship.h"
-#include "Laser.h"
+// Forward declarations — avoid DECLARE_ARCHETYPE expansion from .h files
+// which would create duplicate dllexport symbols across .obj files
+extern void asteroidSetPlayerPos(Vec3 pos);
+extern f32  asteroidConsumePlayerHit(Vec3 *outPush);
+extern void laserFire(Vec3 position, Vec3 direction);
 
 DEFINE_ARCHETYPE(Spaceship, SPACESHIP_FIELDS)
 
@@ -9,10 +13,14 @@ DEFINE_ARCHETYPE(Spaceship, SPACESHIP_FIELDS)
 #define ANGULAR_ACCEL_DEFAULT    6.0f
 #define ANGULAR_DAMPING_DEFAULT  2.0f
 #define FIRE_COOLDOWN           0.15f
+#define PLAYER_MAX_HEALTH      100.0f
+#define PLAYER_HIT_COOLDOWN      1.5f
 
 static Archetype *s_arch        = NULL;
 static f32        s_fireCooldown = 0.0f;
 static i8         s_fireSign     = -1;
+static f32        s_health       = PLAYER_MAX_HEALTH;
+static f32        s_hitTimer     = 0.0f;
 
 void shipInit(Archetype *arch)
 {
@@ -43,6 +51,32 @@ void shipUpdate(Archetype *arch, f32 dt)
     if (LinearDamping[0]  == 0.0f) LinearDamping[0]  = LINEAR_DAMPING_DEFAULT;
     if (AngularAccel[0]   == 0.0f) AngularAccel[0]   = ANGULAR_ACCEL_DEFAULT;
     if (AngularDamping[0] == 0.0f) AngularDamping[0] = ANGULAR_DAMPING_DEFAULT;
+
+    //-------------------------------------------------------------------------
+    // Consume any asteroid collision damage queued by last frame's asteroidUpdate
+
+    Vec3 hitPush = {0.0f, 0.0f, 0.0f};
+    f32  dmg     = asteroidConsumePlayerHit(&hitPush);
+    if (dmg > 0.0f && s_hitTimer <= 0.0f)
+    {
+        s_health   -= dmg;
+        VelX[0]    += hitPush.x;
+        VelY[0]    += hitPush.y;
+        VelZ[0]    += hitPush.z;
+        s_hitTimer  = PLAYER_HIT_COOLDOWN;
+        INFO("[ship] hit! health=%.0f", s_health);
+        if (s_health <= 0.0f)
+        {
+            s_health = PLAYER_MAX_HEALTH;
+            INFO("[ship] destroyed!");
+        }
+    }
+
+    if (s_hitTimer > 0.0f)
+    {
+        s_hitTimer -= dt;
+        if (s_hitTimer < 0.0f) s_hitTimer = 0.0f;
+    }
 
     //-------------------------------------------------------------------------
     // Rotation
@@ -79,10 +113,13 @@ void shipUpdate(Archetype *arch, f32 dt)
     f32 thrustBoost = 1.0f + boostL2 * 2.0f;
     f32 thrustFwd   = -yInputAxis * thrustBoost;
     f32 thrustRight =  xInputAxis;
+    f32 thrustUp    = 0.0f;
+    if (isButtonDown(0, BUTTON_DPAD_UP))   thrustUp += 1.0f;
+    if (isButtonDown(0, BUTTON_DPAD_DOWN)) thrustUp -= 1.0f;
 
     Vec3 localThrust = {
         thrustRight * ThrustForce[0],
-        0.0f,
+        thrustUp    * ThrustForce[0],
         thrustFwd   * ThrustForce[0],
     };
     Vec3 worldThrust = quatRotateVec3(Rot[0], localThrust);
@@ -103,6 +140,11 @@ void shipUpdate(Archetype *arch, f32 dt)
     PosX[0] += VelX[0] * dt;
     PosY[0] += VelY[0] * dt;
     PosZ[0] += VelZ[0] * dt;
+
+    //-------------------------------------------------------------------------
+    // Notify asteroid system of player position for attraction + collision
+
+    asteroidSetPlayerPos((Vec3){PosX[0], PosY[0], PosZ[0]});
 
     //-------------------------------------------------------------------------
     // Camera
@@ -143,7 +185,8 @@ void shipDestroy(void)
     s_arch = NULL;
 }
 
-Archetype *shipGetArchetype(void) { return s_arch; }
+Archetype    *shipGetArchetype(void) { return s_arch; }
+StructLayout *shipGetLayout(void)    { return &Spaceship_layout; }
 
 void shipSpawn(Vec3 position)
 {
@@ -168,6 +211,8 @@ void shipSpawn(Vec3 position)
     ((f32  *)fields[SHIP_THRUST_FORCE]      )[0] = THRUST_FORCE_DEFAULT;
     ((f32  *)fields[SHIP_ANGULAR_ACCEL]     )[0] = ANGULAR_ACCEL_DEFAULT;
     ((f32  *)fields[SHIP_ANGULAR_DAMPING]   )[0] = ANGULAR_DAMPING_DEFAULT;
+    s_health   = PLAYER_MAX_HEALTH;
+    s_hitTimer = 0.0f;
 }
 
 static void shipInitPlugin(void) {}

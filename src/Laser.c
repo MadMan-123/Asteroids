@@ -1,6 +1,9 @@
 #define DRUID_SYSTEM_EXPORT
 #include "Laser.h"
 #include "Asteroid.h"
+#include <math.h>
+
+#define LASER_PUSH 15.0f
 
 DEFINE_ARCHETYPE(Laser, LASER_FIELDS)
 
@@ -61,7 +64,8 @@ void laserDestroy(void)
     s_arch = NULL;
 }
 
-Archetype *laserGetArchetype(void) { return s_arch; }
+Archetype    *laserGetArchetype(void) { return s_arch; }
+StructLayout *laserGetLayout(void)    { return &Laser_layout; }
 
 #define LASER_COLLIDER_RADIUS 2.0f
 
@@ -113,6 +117,9 @@ void laserCheckCollisions(Archetype *asteroids)
         f32 *lPosX  = (f32 *)lf[LASER_POSITION_X];
         f32 *lPosY  = (f32 *)lf[LASER_POSITION_Y];
         f32 *lPosZ  = (f32 *)lf[LASER_POSITION_Z];
+        f32 *lVelX  = (f32 *)lf[LASER_VELOCITY_X];
+        f32 *lVelY  = (f32 *)lf[LASER_VELOCITY_Y];
+        f32 *lVelZ  = (f32 *)lf[LASER_VELOCITY_Z];
 
         for (u32 li = 0; li < lCount; li++)
         {
@@ -129,6 +136,10 @@ void laserCheckCollisions(Archetype *asteroids)
                 f32 *aPosY   = (f32 *)af[ASTEROID_POSITION_Y];
                 f32 *aPosZ   = (f32 *)af[ASTEROID_POSITION_Z];
                 f32 *aRadius = (f32 *)af[ASTEROID_SPHERE_RADIUS];
+                f32 *aHealth = (f32 *)af[ASTEROID_HEALTH];
+                f32 *aVelX   = (f32 *)af[ASTEROID_LINEAR_VELOCITY_X];
+                f32 *aVelY   = (f32 *)af[ASTEROID_LINEAR_VELOCITY_Y];
+                f32 *aVelZ   = (f32 *)af[ASTEROID_LINEAR_VELOCITY_Z];
 
                 for (u32 ai = 0; ai < aCount; ai++)
                 {
@@ -142,8 +153,21 @@ void laserCheckCollisions(Archetype *asteroids)
 
                     if (distSq < rSum * rSum)
                     {
-                        archetypePoolDespawn(s_arch,   lc * s_arch->chunkCapacity   + li);
-                        archetypePoolDespawn(asteroids, ac * asteroids->chunkCapacity + ai);
+                        // Push asteroid in laser direction
+                        f32 lSpd = sqrtf(lVelX[li]*lVelX[li] + lVelY[li]*lVelY[li] + lVelZ[li]*lVelZ[li]);
+                        if (lSpd > 0.0f)
+                        {
+                            f32 inv = LASER_PUSH / lSpd;
+                            aVelX[ai] += lVelX[li] * inv;
+                            aVelY[ai] += lVelY[li] * inv;
+                            aVelZ[ai] += lVelZ[li] * inv;
+                        }
+
+                        aHealth[ai] -= 1.0f;
+                        if (aHealth[ai] <= 0.0f)
+                            archetypePoolDespawn(asteroids, ac * asteroids->chunkCapacity + ai);
+
+                        archetypePoolDespawn(s_arch, lc * s_arch->chunkCapacity + li);
                         goto next_laser;
                     }
                 }

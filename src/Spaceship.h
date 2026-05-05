@@ -46,6 +46,7 @@ extern "C" {
 DECLARE_ARCHETYPE(Spaceship, SPACESHIP_FIELDS)
 // <DRUID_GEN_END Spaceship>
 
+DSAPI StructLayout *shipGetLayout(void);
 DSAPI void      shipInit(Archetype *arch);
 DSAPI void      shipUpdate(Archetype *arch, f32 dt);
 DSAPI void      shipDestroy(void);
