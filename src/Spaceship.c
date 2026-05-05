@@ -1,5 +1,6 @@
 #define DRUID_SYSTEM_EXPORT
 #include "Spaceship.h"
+#include "Laser.h"
 
 DEFINE_ARCHETYPE(Spaceship, SPACESHIP_FIELDS)
 
@@ -7,8 +8,11 @@ DEFINE_ARCHETYPE(Spaceship, SPACESHIP_FIELDS)
 #define LINEAR_DAMPING_DEFAULT   0.8f
 #define ANGULAR_ACCEL_DEFAULT    6.0f
 #define ANGULAR_DAMPING_DEFAULT  2.0f
+#define FIRE_COOLDOWN           0.15f
 
-static Archetype *s_arch = NULL;
+static Archetype *s_arch        = NULL;
+static f32        s_fireCooldown = 0.0f;
+static i8         s_fireSign     = -1;
 
 void shipInit(Archetype *arch)
 {
@@ -43,9 +47,9 @@ void shipUpdate(Archetype *arch, f32 dt)
     //-------------------------------------------------------------------------
     // Rotation
 
-    Vec2 trig = getJoystickAxis(0, JOYSTICK_TRIGGER_LEFT, JOYSTICK_TRIGGER_RIGHT);
-    f32 thrustUp   = clamp(-trig.y, 0.0f, 1.0f);  // R2
-    f32 thrustDown = clamp(-trig.x, 0.0f, 1.0f);  // L2
+    Vec2 trig   = getJoystickAxis(0, JOYSTICK_TRIGGER_LEFT, JOYSTICK_TRIGGER_RIGHT);
+    f32  boostL2 = clamp(-trig.x, 0.0f, 1.0f);
+    f32  fireR2  = clamp(-trig.y, 0.0f, 1.0f);
 
     f32 rollInput = 0.0f;
     if (isButtonDown(0, BUTTON_RIGHTSHOULDER)) rollInput += 1.0f;
@@ -60,22 +64,25 @@ void shipUpdate(Archetype *arch, f32 dt)
     PitchRate[0] = PitchRate[0] * angDamp + ( look.y   * AngularAccel[0]) * dt;
     RollRate[0]  = RollRate[0]  * angDamp + (rollInput  * AngularAccel[0]) * dt;
 
-    Vec4 dYaw   = quatFromAxisAngle(v3Up,      YawRate[0]   * dt);
-    Vec4 dPitch = quatFromAxisAngle(v3Right,   PitchRate[0] * dt);
-    Vec4 dRoll  = quatFromAxisAngle(v3Forward, RollRate[0]  * dt);
-    Rot[0] = quatNormalize(quatMul(quatMul(quatMul(Rot[0], dYaw), dPitch), dRoll));
+    Vec3 localUp    = quatRotateVec3(Rot[0], v3Up);
+    Vec3 localRight = quatRotateVec3(Rot[0], v3Right);
+    Vec3 localFwd   = quatRotateVec3(Rot[0], v3Forward);
+    Vec4 dYaw   = quatFromAxisAngle(localUp,    YawRate[0]   * dt);
+    Vec4 dPitch = quatFromAxisAngle(localRight, PitchRate[0] * dt);
+    Vec4 dRoll  = quatFromAxisAngle(localFwd,   RollRate[0]  * dt);
+    Rot[0] = quatNormalize(quatMul(dRoll, quatMul(dPitch, quatMul(dYaw, Rot[0]))));
 
     //-------------------------------------------------------------------------
     // Translation — fully manual: thrust → velocity → position.
     // Kinematic body so physics never touches velocity or position.
 
-    f32 thrustFwd   = -yInputAxis;
+    f32 thrustBoost = 1.0f + boostL2 * 2.0f;
+    f32 thrustFwd   = -yInputAxis * thrustBoost;
     f32 thrustRight =  xInputAxis;
-    f32 thrustVert  =  thrustUp - thrustDown;
 
     Vec3 localThrust = {
         thrustRight * ThrustForce[0],
-        thrustVert  * ThrustForce[0],
+        0.0f,
         thrustFwd   * ThrustForce[0],
     };
     Vec3 worldThrust = quatRotateVec3(Rot[0], localThrust);
@@ -104,6 +111,30 @@ void shipUpdate(Archetype *arch, f32 dt)
     {
         runtime->camera->pos         = (Vec3){PosX[0], PosY[0], PosZ[0]};
         runtime->camera->orientation = Rot[0];
+    }
+
+    //-------------------------------------------------------------------------
+    // Firing — R2 fires alternating left/right lasers
+
+    s_fireCooldown -= dt;
+    if (s_fireCooldown < 0.0f) s_fireCooldown = 0.0f;
+
+    if (fireR2 > 0.3f && s_fireCooldown == 0.0f)
+    {
+        Vec3 shipPos = {PosX[0], PosY[0], PosZ[0]};
+        Vec3 fwd     = quatRotateVec3(Rot[0], v3Forward);
+        Vec3 right   = quatRotateVec3(Rot[0], v3Right);
+
+        Vec3 muzzle = {
+            shipPos.x + fwd.x * 2.0f,
+            shipPos.y + fwd.y * 2.0f,
+            shipPos.z + fwd.z * 2.0f,
+        };
+        Vec3 offset = v3Add(muzzle, v3Scale(right, s_fireSign * 5.0f));
+        s_fireSign  = -s_fireSign;
+
+        laserFire(offset, fwd);
+        s_fireCooldown = FIRE_COOLDOWN;
     }
 }
 

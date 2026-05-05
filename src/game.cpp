@@ -1,11 +1,13 @@
 #include "game.h"
 #include "Asteroid.h"
 #include "Spaceship.h"
+#include "Laser.h"
 #include <math.h>
 #include <stdlib.h>
 
 static Archetype g_asteroidArch = {0};
 static Archetype g_shipArch     = {0};
+static Archetype g_laserArch    = {0};
 
 static u32 s_randomSeed = 12345u;
 static f32 randomFloat(f32 min, f32 max)
@@ -52,6 +54,17 @@ static void gameInit(const c8 *projectDir)
     Vec3 shipStart = {0.0f, 0.0f, 0.0f};
     shipSpawn(shipStart);
 
+    // Laser archetype — buffered pool, no physics
+    g_laserArch.flags = 0;
+    FLAG_SET(g_laserArch.flags, ARCH_BUFFERED);
+    if (!createArchetype(&Laser_layout, LASER_POOL_CAPACITY, &g_laserArch))
+    {
+        ERROR("Failed to create Laser archetype");
+        return;
+    }
+    laserInit(&g_laserArch);
+    runtimeRegisterArchetype(runtime, &g_laserArch);
+
     // Burst-spawn 10k asteroids in a 2000-unit shell around the origin
     for (u32 i = 0; i < 10000; i++)
     {
@@ -82,12 +95,15 @@ static void gameUpdate(f32 dt)
     runtimeUpdate(runtime, dt);
     shipUpdate(&g_shipArch, dt);
     asteroidUpdate(&g_asteroidArch, dt);
+    laserUpdate(&g_laserArch, dt);
+    laserCheckCollisions(&g_asteroidArch);
 }
 
 static void gameRender(f32 dt)
 {
     runtimeBeginScenePass(runtime, dt);
     rendererDefaultArchetypeRender(&g_asteroidArch, renderer);
+    rendererDefaultArchetypeRender(&g_laserArch, renderer);
     runtimeEndScenePass(runtime);
 }
 
@@ -99,6 +115,9 @@ static void gameDestroy(void)
     asteroidDestroy();
     destroyArchetype(&g_asteroidArch);
 
+    laserDestroy();
+    destroyArchetype(&g_laserArch);
+
     runtimeDestroy(runtime);
 }
 
@@ -107,6 +126,7 @@ u32 druidGetGameArchetypes(Archetype **out, u32 max)
     u32 n = 0;
     if (n < max && g_asteroidArch.arena) out[n++] = &g_asteroidArch;
     if (n < max && g_shipArch.arena)     out[n++] = &g_shipArch;
+    if (n < max && g_laserArch.arena)    out[n++] = &g_laserArch;
     return n;
 }
 
