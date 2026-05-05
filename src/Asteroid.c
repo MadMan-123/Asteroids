@@ -210,9 +210,9 @@ void asteroidSpawn(Vec3 position, Vec3 velocity)
     f32 baseRadius = (m && m->boundingRadius > 0.0f) ? m->boundingRadius : 20.0f;
     ((f32  *)fields[ASTEROID_SPHERE_RADIUS    ])[localIdx] = baseRadius * scale;
 
-    // Health scales with size: small = 2 hits, large = 7 hits
+    // Health scales with size: small = 5 hits, large = 20 hits
     f32 t = (scale - SCALE_MIN) / (SCALE_MAX - SCALE_MIN);
-    ((f32  *)fields[ASTEROID_HEALTH           ])[localIdx] = 2.0f + t * 5.0f;
+    ((f32  *)fields[ASTEROID_HEALTH           ])[localIdx] = 5.0f + t * 15.0f;
     ((f32  *)fields[ASTEROID_HIT_TIMER        ])[localIdx] = 0.0f;
 }
 

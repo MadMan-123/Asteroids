@@ -1,17 +1,13 @@
 #define DRUID_SYSTEM_EXPORT
 #include "Crystal.h"
 #include <math.h>
-#include <string.h>
 
 #define COLLECTION_RADIUS   40.0f
 #define CRYSTAL_SPIN_RATE    0.5f
-#define NUM_CRYSTAL_MODELS  16
 
 DEFINE_ARCHETYPE(Crystal, CRYSTAL_FIELDS)
 
 static Archetype *s_arch        = NULL;
-static u32        s_modelIds[NUM_CRYSTAL_MODELS];
-static u32        s_modelCount  = 0;
 static b8         s_emissiveSet = 0;
 static u32        s_collected   = 0;
 
@@ -20,27 +16,8 @@ static const Vec3 s_spinAxis = { 0.577f, 0.577f, 0.577f };
 void crystalInit(Archetype *arch)
 {
     s_arch        = arch;
-    s_modelCount  = 0;
     s_emissiveSet = 0;
     s_collected   = 0;
-
-    // Prefer non-asteroid models; fall back to any available model
-    for (u32 id = 0; s_modelCount < NUM_CRYSTAL_MODELS; id++)
-    {
-        Model *m = resGetModel(id);
-        if (!m || !m->name) break;
-        if (!strstr(m->name, "asteroid"))
-            s_modelIds[s_modelCount++] = id;
-    }
-    if (s_modelCount == 0)
-    {
-        for (u32 id = 0; s_modelCount < NUM_CRYSTAL_MODELS; id++)
-        {
-            Model *m = resGetModel(id);
-            if (!m || !m->name) break;
-            s_modelIds[s_modelCount++] = id;
-        }
-    }
 }
 
 void crystalUpdate(Archetype *arch, f32 dt)
@@ -74,7 +51,7 @@ StructLayout *crystalGetLayout(void)    { return &Crystal_layout; }
 
 void crystalSpawn(Vec3 position, f32 scale)
 {
-    if (!s_arch || s_modelCount == 0) return;
+    if (!s_arch) return;
 
     u32 poolIdx = prefabSpawn(s_arch, 0, position);
     if (poolIdx == (u32)-1) return;
@@ -84,15 +61,27 @@ void crystalSpawn(Vec3 position, f32 scale)
     void **fields = getArchetypeFields(s_arch, chunkIdx);
     if (!fields) return;
 
-    u32 modelId = s_modelIds[poolIdx % s_modelCount];
-    ((Vec3 *)fields[CRYSTAL_SCALE]   )[localIdx] = (Vec3){ scale, scale, scale };
-    ((u32  *)fields[CRYSTAL_MODEL_ID])[localIdx] = modelId;
-    ((Vec4 *)fields[CRYSTAL_ROTATION])[localIdx] = (Vec4){ 0.0f, 0.0f, 0.0f, 1.0f };
+    // Varied initial rotation — golden-angle spread across pool slots
+    static const Vec3 initAxes[] = {
+        { 1.0f,   0.0f,   0.0f  },
+        { 0.0f,   1.0f,   0.0f  },
+        { 0.0f,   0.0f,   1.0f  },
+        { 0.577f, 0.577f, 0.577f},
+        { 0.707f, 0.707f, 0.0f  },
+        { 0.707f, 0.0f,   0.707f},
+        { 0.0f,   0.707f, 0.707f},
+        {-0.577f, 0.577f, 0.577f},
+    };
+    f32  initAngle = poolIdx * 2.39996f; // golden angle in radians
+    Vec4 initRot   = quatFromAxisAngle(initAxes[poolIdx % 8], initAngle);
 
-    // Sets emissive on first spawn — assign a unique model to the Crystal prefab
-    // in the editor to avoid this affecting asteroid materials
+    ((b8   *)fields[CRYSTAL_ALIVE]   )[localIdx] = 1;
+    ((Vec3 *)fields[CRYSTAL_SCALE]   )[localIdx] = (Vec3){ scale, scale, scale };
+    ((Vec4 *)fields[CRYSTAL_ROTATION])[localIdx] = quatNormalize(initRot);
+
     if (!s_emissiveSet)
     {
+        u32 modelId = ((u32 *)fields[CRYSTAL_MODEL_ID])[localIdx];
         Model *m = resGetModel(modelId);
         if (m && m->materialCount > 0)
         {

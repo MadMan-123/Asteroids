@@ -79,12 +79,12 @@ static void gameInit(const c8 *projectDir)
     crystalInit(&g_crystalArch);
     runtimeRegisterArchetype(runtime, &g_crystalArch);
 
-    // Spawn 300 crystals in 20 clusters at 1000-4000 units — spread beyond asteroid field
+    // Spawn 300 crystals in 20 clusters scattered through the asteroid field (100-2000 units)
     for (u32 cluster = 0; cluster < 20; cluster++)
     {
         f32  theta  = randomFloat(0.0f, 6.28318f);
         f32  phi    = randomFloat(0.0f, 3.14159f);
-        f32  radius = randomFloat(1000.0f, 4000.0f);
+        f32  radius = randomFloat(100.0f, 2000.0f);
         f32  sinPhi = sinf(phi);
         Vec3 center = {
             sinPhi * cosf(theta) * radius,
@@ -94,11 +94,11 @@ static void gameInit(const c8 *projectDir)
         for (u32 j = 0; j < 15; j++)
         {
             Vec3 pos = {
-                center.x + randomFloat(-80.0f, 80.0f),
-                center.y + randomFloat(-80.0f, 80.0f),
-                center.z + randomFloat(-80.0f, 80.0f),
+                center.x + randomFloat(-200.0f, 200.0f),
+                center.y + randomFloat(-200.0f, 200.0f),
+                center.z + randomFloat(-200.0f, 200.0f),
             };
-            crystalSpawn(pos, randomFloat(0.06f, 0.10f));
+            crystalSpawn(pos, randomFloat(1.0f, 1.5f));
         }
     }
 
