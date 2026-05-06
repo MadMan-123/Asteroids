@@ -22,6 +22,7 @@ void gameAudioAsteroidDestroy(Vec3 pos);
 void gameAudioCrystalCollect(void);     // player is right there, non-spatial
 void gameAudioCrystalWhisper(Vec3 pos); // long-range ambient to guide the player
 void gameAudioTickWhispers(f32 dt, f32 nearestDist, Vec3 nearestPos); // call once/frame from crystalUpdate
+void gameAudioTick(f32 dt);  // call once/frame from gameUpdate
 
 #ifdef __cplusplus
 }

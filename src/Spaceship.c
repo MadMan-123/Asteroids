@@ -285,6 +285,18 @@ void shipSpawn(Vec3 position)
     s_deathTimer  = 0.0f;
 }
 
+Vec3 shipGetPos(void)
+{
+    if (!s_arch || s_arch->arena[0].count == 0) return (Vec3){0.0f, 0.0f, 0.0f};
+    void **fields = getArchetypeFields(s_arch, 0);
+    if (!fields) return (Vec3){0.0f, 0.0f, 0.0f};
+    return (Vec3){
+        ((f32*)fields[SHIP_POSITION_X])[0],
+        ((f32*)fields[SHIP_POSITION_Y])[0],
+        ((f32*)fields[SHIP_POSITION_Z])[0],
+    };
+}
+
 static void shipInitPlugin(void) {}
 
 void druidGetECSSystem_Spaceship(ECSSystemPlugin *out)

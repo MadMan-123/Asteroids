@@ -3,9 +3,10 @@
 #define THRUST_COOLDOWN   0.45f
 #define WHISPER_COOLDOWN  8.0f
 
-static f32 s_thrustTimer   = 0.0f;
-static f32 s_whisperTimer  = 0.0f;
-static i32 s_thrustVoice   = -1;
+static f32 s_thrustTimer      = 0.0f;
+static f32 s_whisperTimer     = 0.0f;
+static i32 s_thrustVoice      = -1;
+static f32 s_musicStopTimer   = 0.0f;
 
 // 3D audio listener position
 static Vec3 s_listenerPos = {0.0f, 0.0f, 0.0f};
@@ -85,10 +86,20 @@ void gameAudioShipHit(void)
 void gameAudioShipDeath(void)
 {
     playSound("death.mp3", 0.6f);
+    s_musicStopTimer = 1.5f;
+}
 
-    //wait until death sound is almost done before stopping music
-    SDL_Delay(1500);
-    stopMusic();
+void gameAudioTick(f32 dt)
+{
+    if (s_musicStopTimer > 0.0f)
+    {
+        s_musicStopTimer -= dt;
+        if (s_musicStopTimer <= 0.0f)
+        {
+            s_musicStopTimer = 0.0f;
+            stopMusic();
+        }
+    }
 }
 
 void gameAudioLaser(Vec3 pos)

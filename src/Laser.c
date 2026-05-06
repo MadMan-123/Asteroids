@@ -3,6 +3,7 @@
 #include "Asteroid.h"
 #include "GameAudio.h"
 #include <math.h>
+#include <string.h>
 
 #define LASER_PUSH 15.0f
 
@@ -87,20 +88,34 @@ void laserFire(Vec3 position, Vec3 direction)
     ((f32 *)fields[LASER_VELOCITY_Y])[localIdx] = direction.y * LASER_SPEED;
     ((f32 *)fields[LASER_VELOCITY_Z])[localIdx] = direction.z * LASER_SPEED;
     ((f32 *)fields[LASER_LIFETIME]  )[localIdx] = LASER_LIFETIME_MAX;
+    ((Vec3*)fields[LASER_SCALE]     )[localIdx] = (Vec3){0.05f, 0.05f, 0.15f};
 
-    // Set emissive for bloom once, on first fire
-    static b8 s_bloomSet = 0;
-    if (!s_bloomSet)
+    // Find and lock in the correct laser model once — search for "enchanted-crystal"
+    static u32 s_laserModelId = (u32)-1;
+    if (s_laserModelId == (u32)-1)
     {
-        u32 modelId = ((u32 *)fields[LASER_MODEL_ID])[localIdx];
-        Model *m = resGetModel(modelId);
-        if (m && m->materialCount > 0)
+        for (u32 id = 0; id < 4096; id++)
         {
-            Material *mat = resGetMaterial(m->materialIndices[0]);
-            if (mat) mat->emissive = 8.0f;
+            Model *m = resGetModel(id);
+            if (!m || !m->name) break;
+            if (strstr(m->name, "enchanted-crystal") || strstr(m->name, "crystal"))
+            {
+                s_laserModelId = id;
+                if (m->materialCount > 0)
+                {
+                    Material *mat = resGetMaterial(m->materialIndices[0]);
+                    if (mat)
+                    {
+                        mat->emissive = 8.0f;
+                        mat->colour   = (Vec3){0.4f, 0.9f, 1.0f};
+                    }
+                }
+                break;
+            }
         }
-        s_bloomSet = 1;
     }
+    if (s_laserModelId != (u32)-1)
+        ((u32 *)fields[LASER_MODEL_ID])[localIdx] = s_laserModelId;
 }
 
 void laserCheckCollisions(Archetype *asteroids)

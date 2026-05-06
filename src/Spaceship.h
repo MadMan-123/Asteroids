@@ -52,6 +52,7 @@ DSAPI void      shipUpdate(Archetype *arch, f32 dt);
 DSAPI void      shipDestroy(void);
 DSAPI Archetype *shipGetArchetype(void);
 DSAPI void      shipSpawn(Vec3 position);
+DSAPI Vec3      shipGetPos(void);
 
 DSAPI void druidGetECSSystem_Spaceship(ECSSystemPlugin *out);
 

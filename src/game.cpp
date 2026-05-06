@@ -3,6 +3,7 @@
 #include "Spaceship.h"
 #include "Laser.h"
 #include "Crystal.h"
+#include "GameAudio.h"
 #include <math.h>
 #include <stdlib.h>
 
@@ -288,6 +289,7 @@ static void gameInit(const c8 *projectDir)
 static void gameUpdate(f32 dt)
 {
     runtimeUpdate(runtime, dt);
+    gameAudioTick(dt);
     shipUpdate(&g_shipArch, dt);
     asteroidUpdate(&g_asteroidArch, dt);
     laserUpdate(&g_laserArch, dt);
@@ -310,6 +312,21 @@ static void gameRender(f32 dt)
     rendererDefaultArchetypeRender(&g_asteroidArch, renderer);
     rendererDefaultArchetypeRender(&g_laserArch, renderer);
     rendererDefaultArchetypeRender(&g_crystalArch, renderer);
+
+    // Feed ship position into the deferred lighting shader as u_lightPos
+    if (runtime && runtime->lightingShader)
+    {
+        static i32 s_uLightPos = -2;
+        if (s_uLightPos == -2)
+            s_uLightPos = glGetUniformLocation(runtime->lightingShader, "u_lightPos");
+        if (s_uLightPos >= 0)
+        {
+            Vec3 sp = shipGetPos();
+            glUseProgram(runtime->lightingShader);
+            glUniform3f(s_uLightPos, sp.x, sp.y, sp.z);
+        }
+    }
+
     runtimeEndScenePass(runtime);
 
     if (runtime && runtime->standaloneMode && display)
