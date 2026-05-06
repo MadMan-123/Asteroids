@@ -17,8 +17,9 @@ int main(int argc, char **argv)
     (void)argc; (void)argv;
     druidGetPlugin(&plugin);
     g_app = createApplication(DRUID_APP_TITLE, _init, _update, _render, _destroy);
-    g_app->width  = 1280;
-    g_app->height = 720;
+    g_app->width        = 1280;
+    g_app->height       = 720;
+    g_app->inputProcess = (void(*)(void*))processInput;
     run(g_app);
     return 0;
 }

@@ -11,6 +11,157 @@ static Archetype g_shipArch     = {0};
 static Archetype g_laserArch    = {0};
 static Archetype g_crystalArch  = {0};
 
+// ─── Bloom ───────────────────────────────────────────────────────────────────
+static u32 g_bloomCapFBO      = 0;   // FBO wrapping the capture texture
+static u32 g_bloomCapTex      = 0;   // full-res screen capture
+static u32 g_bloomPingFBO[2]  = {0, 0};
+static u32 g_bloomPingTex[2]  = {0, 0};
+static u32 g_bloomBrightProg  = 0;
+static u32 g_bloomBlurProg    = 0;
+static u32 g_bloomCompProg    = 0;
+static u32 g_bloomQuadVAO     = 0;
+static u32 g_bloomQuadVBO     = 0;
+static i32 g_bloomW = 0, g_bloomH = 0;
+// Cached uniform locations (set once after shader load)
+static i32 g_uBrightScene = -1, g_uBrightThresh = -1;
+static i32 g_uBlurImage = -1, g_uBlurHoriz = -1;
+static i32 g_uCompScene = -1, g_uCompBloom = -1, g_uCompStrength = -1;
+
+static void bloomInit(i32 w, i32 h)
+{
+    g_bloomW = w; g_bloomH = h;
+
+    // Full-res capture texture + FBO — we blit the finished frame into this
+    glGenTextures(1, &g_bloomCapTex);
+    glBindTexture(GL_TEXTURE_2D, g_bloomCapTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glGenFramebuffers(1, &g_bloomCapFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_bloomCapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_bloomCapTex, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Half-res ping-pong FBOs for blur
+    i32 bw = w / 2, bh = h / 2;
+    for (u32 i = 0; i < 2; i++)
+    {
+        glGenFramebuffers(1, &g_bloomPingFBO[i]);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_bloomPingFBO[i]);
+        glGenTextures(1, &g_bloomPingTex[i]);
+        glBindTexture(GL_TEXTURE_2D, g_bloomPingTex[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, bw, bh, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_bloomPingTex[i], 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    g_bloomBrightProg = createGraphicsProgram("./res/bloom_bright.vert",    "./res/bloom_bright.frag");
+    g_bloomBlurProg   = createGraphicsProgram("./res/bloom_blur.vert",      "./res/bloom_blur.frag");
+    g_bloomCompProg   = createGraphicsProgram("./res/bloom_composite.vert", "./res/bloom_composite.frag");
+
+    if (!g_bloomBrightProg) { ERROR("Bloom: failed to load bloom_bright shaders"); }
+    if (!g_bloomBlurProg)   { ERROR("Bloom: failed to load bloom_blur shaders"); }
+    if (!g_bloomCompProg)   { ERROR("Bloom: failed to load bloom_composite shaders"); }
+
+    if (g_bloomBrightProg)
+    {
+        g_uBrightScene  = glGetUniformLocation(g_bloomBrightProg, "scene");
+        g_uBrightThresh = glGetUniformLocation(g_bloomBrightProg, "u_threshold");
+    }
+    if (g_bloomBlurProg)
+    {
+        g_uBlurImage = glGetUniformLocation(g_bloomBlurProg, "image");
+        g_uBlurHoriz = glGetUniformLocation(g_bloomBlurProg, "horizontal");
+    }
+    if (g_bloomCompProg)
+    {
+        g_uCompScene    = glGetUniformLocation(g_bloomCompProg, "scene");
+        g_uCompBloom    = glGetUniformLocation(g_bloomCompProg, "bloomBlur");
+        g_uCompStrength = glGetUniformLocation(g_bloomCompProg, "u_bloomStrength");
+    }
+
+    if (g_bloomBrightProg && g_bloomBlurProg && g_bloomCompProg)
+        INFO("Bloom: initialised (%dx%d, half-res blur %dx%d)", w, h, bw, bh);
+
+    f32 q[] = {
+        -1.f, 1.f,  0.f,1.f,   -1.f,-1.f,  0.f,0.f,   1.f,-1.f,  1.f,0.f,
+        -1.f, 1.f,  0.f,1.f,    1.f,-1.f,  1.f,0.f,   1.f, 1.f,  1.f,1.f,
+    };
+    glGenVertexArrays(1, &g_bloomQuadVAO);
+    glGenBuffers(1, &g_bloomQuadVBO);
+    glBindVertexArray(g_bloomQuadVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, g_bloomQuadVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(q), q, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4*sizeof(f32), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*sizeof(f32), (void*)(2*sizeof(f32)));
+    glBindVertexArray(0);
+}
+
+static void bloomApply(i32 w, i32 h)
+{
+    if (!g_bloomBrightProg || !g_bloomBlurProg || !g_bloomCompProg || !g_bloomQuadVAO) return;
+
+    // 1. Blit finished frame (FBO 0) → capture texture
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_bloomCapFBO);
+    glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    glDisable(GL_DEPTH_TEST);
+    glBindVertexArray(g_bloomQuadVAO);
+
+    // 2. Bright-extract at half-res → pingFBO[0]
+    glBindFramebuffer(GL_FRAMEBUFFER, g_bloomPingFBO[0]);
+    glViewport(0, 0, w/2, h/2);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(g_bloomBrightProg);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, g_bloomCapTex);
+    glUniform1i(g_uBrightScene,  0);
+    glUniform1f(g_uBrightThresh, 0.5f);   // low threshold — catches more of the glow
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    // 3. Ping-pong Gaussian blur (10 passes)
+    glUseProgram(g_bloomBlurProg);
+    glUniform1i(g_uBlurImage, 0);
+    u32 horiz = 1;
+    for (u32 i = 0; i < 10; i++)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, g_bloomPingFBO[horiz]);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, g_bloomPingTex[horiz ^ 1]);
+        glUniform1i(g_uBlurHoriz, (i32)horiz);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        horiz ^= 1;
+    }
+    // result is in g_bloomPingTex[0]
+
+    // 4. Composite (scene + bloom) → screen
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, w, h);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(g_bloomCompProg);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, g_bloomCapTex);
+    glUniform1i(g_uCompScene, 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, g_bloomPingTex[0]);
+    glUniform1i(g_uCompBloom,    1);
+    glUniform1f(g_uCompStrength, 2.0f);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    glBindVertexArray(0);
+    glEnable(GL_DEPTH_TEST);
+}
+
 static b8 g_requestQuit = 0;
 extern "C" void gameSignalQuit(void) { g_requestQuit = 1; }
 static b8 gameRequestsQuit(void) { b8 r = g_requestQuit; g_requestQuit = 0; return r; }
@@ -160,10 +311,31 @@ static void gameRender(f32 dt)
     rendererDefaultArchetypeRender(&g_laserArch, renderer);
     rendererDefaultArchetypeRender(&g_crystalArch, renderer);
     runtimeEndScenePass(runtime);
+
+    if (runtime && runtime->standaloneMode && display)
+    {
+        i32 w = (i32)display->screenWidth;
+        i32 h = (i32)display->screenHeight;
+        if (!g_bloomCapTex) bloomInit(w, h);
+        bloomApply(w, h);
+    }
 }
 
 static void gameDestroy(void)
 {
+    if (g_bloomCapFBO)     { glDeleteFramebuffers(1,  &g_bloomCapFBO);     g_bloomCapFBO    = 0; }
+    if (g_bloomCapTex)     { glDeleteTextures(1,      &g_bloomCapTex);     g_bloomCapTex    = 0; }
+    for (u32 i = 0; i < 2; i++)
+    {
+        if (g_bloomPingFBO[i]) { glDeleteFramebuffers(1, &g_bloomPingFBO[i]); g_bloomPingFBO[i] = 0; }
+        if (g_bloomPingTex[i]) { glDeleteTextures(1,     &g_bloomPingTex[i]); g_bloomPingTex[i] = 0; }
+    }
+    if (g_bloomBrightProg) { freeShader(g_bloomBrightProg); g_bloomBrightProg = 0; }
+    if (g_bloomBlurProg)   { freeShader(g_bloomBlurProg);   g_bloomBlurProg   = 0; }
+    if (g_bloomCompProg)   { freeShader(g_bloomCompProg);   g_bloomCompProg   = 0; }
+    if (g_bloomQuadVAO)    { glDeleteVertexArrays(1, &g_bloomQuadVAO); g_bloomQuadVAO = 0; }
+    if (g_bloomQuadVBO)    { glDeleteBuffers(1,       &g_bloomQuadVBO); g_bloomQuadVBO = 0; }
+
     shipDestroy();
     destroyArchetype(&g_shipArch);
 
