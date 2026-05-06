@@ -12,7 +12,7 @@ static Archetype g_shipArch     = {0};
 static Archetype g_laserArch    = {0};
 static Archetype g_crystalArch  = {0};
 
-// ─── Bloom ───────────────────────────────────────────────────────────────────
+
 static u32 g_bloomCapFBO      = 0;   // FBO wrapping the capture texture
 static u32 g_bloomCapTex      = 0;   // full-res screen capture
 static u32 g_bloomPingFBO[2]  = {0, 0};

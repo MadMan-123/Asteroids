@@ -7,6 +7,21 @@
 
 #define LASER_PUSH 15.0f
 
+// Rotate from unit vector 'from' to unit vector 'to'
+static Vec4 quatFromTo(Vec3 from, Vec3 to)
+{
+    Vec3 axis = v3Cross(from, to);
+    f32  w    = 1.0f + v3Dot(from, to);
+    if (w < 0.0001f)
+    {
+        // Anti-parallel — pick any perpendicular axis and rotate 180 degrees
+        Vec3 perp = (from.x * from.x < 0.9f) ? (Vec3){1,0,0} : (Vec3){0,1,0};
+        axis = v3Norm(v3Cross(from, perp));
+        return (Vec4){axis.x, axis.y, axis.z, 0.0f};
+    }
+    return quatNormalize((Vec4){axis.x, axis.y, axis.z, w});
+}
+
 DEFINE_ARCHETYPE(Laser, LASER_FIELDS)
 
 #define LASER_SPEED        500.0f
@@ -71,7 +86,7 @@ StructLayout *laserGetLayout(void)    { return &Laser_layout; }
 
 #define LASER_COLLIDER_RADIUS 2.0f
 
-void laserFire(Vec3 position, Vec3 direction)
+void laserFire(Vec3 position, Vec3 direction, Vec4 cameraOrientation)
 {
     if (!s_arch) return;
 
@@ -84,11 +99,100 @@ void laserFire(Vec3 position, Vec3 direction)
     void **fields = getArchetypeFields(s_arch, chunkIdx);
     if (!fields) return;
 
+    Vec3 fireDir = v3Norm(direction);
+
     ((f32 *)fields[LASER_VELOCITY_X])[localIdx] = direction.x * LASER_SPEED;
     ((f32 *)fields[LASER_VELOCITY_Y])[localIdx] = direction.y * LASER_SPEED;
     ((f32 *)fields[LASER_VELOCITY_Z])[localIdx] = direction.z * LASER_SPEED;
     ((f32 *)fields[LASER_LIFETIME]  )[localIdx] = LASER_LIFETIME_MAX;
-    ((Vec3*)fields[LASER_SCALE]     )[localIdx] = (Vec3){0.05f, 0.05f, 0.15f};
+    ((Vec3*)fields[LASER_SCALE]     )[localIdx] = (Vec3){0.0625f, 0.09375f, 0.1875f};
+
+    // Build laser rotation: laser's +Y points in fire direction, and rotation is consistent with camera
+    // Get camera's local axes
+    Vec3 camFwd   = quatRotateVec3(cameraOrientation, v3Forward);
+    Vec3 camRight = quatRotateVec3(cameraOrientation, v3Right);
+    Vec3 camUp    = quatRotateVec3(cameraOrientation, v3Up);
+
+    // Laser's Z-axis points in fire direction (standard graphics convention: +Z is forward)
+    Vec3 laserZ = fireDir;
+
+    // Laser's X-axis: project camera right onto plane perpendicular to fire direction, then normalize
+    Vec3 laserX = v3Sub(camRight, v3Scale(fireDir, v3Dot(camRight, fireDir)));
+    f32 laserXLen = v3Mag(laserX);
+    if (laserXLen > 0.001f)
+    {
+        laserX = v3Scale(laserX, 1.0f / laserXLen);
+    }
+    else
+    {
+        // Degenerate case: camera right is parallel to fire direction, use camera up instead
+        laserX = v3Sub(camUp, v3Scale(fireDir, v3Dot(camUp, fireDir)));
+        laserXLen = v3Mag(laserX);
+        if (laserXLen > 0.001f)
+        {
+            laserX = v3Scale(laserX, 1.0f / laserXLen);
+        }
+        else
+        {
+            // Last resort: pick any perpendicular axis
+            laserX = (fireDir.x * fireDir.x < 0.9f) ? (Vec3){1,0,0} : (Vec3){0,1,0};
+            laserX = v3Norm(v3Cross(fireDir, laserX));
+        }
+    }
+
+    // Laser's Y-axis: right-hand rule (cross product)
+    Vec3 laserY = v3Cross(laserZ, laserX);
+
+    // Convert rotation frame (axes) to quaternion using Shepperd's method
+    // We build a 3x3 rotation matrix where the columns are laserX, laserY, laserZ
+    Vec4 laserQuat = quatIdentity();
+    {
+        // Extract 3x3 rotation matrix values
+        f32 m00 = laserX.x, m10 = laserX.y, m20 = laserX.z;
+        f32 m01 = laserY.x, m11 = laserY.y, m21 = laserY.z;
+        f32 m02 = laserZ.x, m12 = laserZ.y, m22 = laserZ.z;
+
+        // Shepperd's method for robust matrix-to-quaternion conversion
+        f32 trace = m00 + m11 + m22;
+        if (trace > 0.0f)
+        {
+            f32 s = 0.5f / sqrtf(trace + 1.0f);
+            laserQuat.w = 0.25f / s;
+            laserQuat.x = (m21 - m12) * s;
+            laserQuat.y = (m02 - m20) * s;
+            laserQuat.z = (m10 - m01) * s;
+        }
+        else if (m00 > m11 && m00 > m22)
+        {
+            f32 s = 2.0f * sqrtf(1.0f + m00 - m11 - m22);
+            laserQuat.w = (m21 - m12) / s;
+            laserQuat.x = 0.25f * s;
+            laserQuat.y = (m01 + m10) / s;
+            laserQuat.z = (m02 + m20) / s;
+        }
+        else if (m11 > m22)
+        {
+            f32 s = 2.0f * sqrtf(1.0f + m11 - m00 - m22);
+            laserQuat.w = (m02 - m20) / s;
+            laserQuat.x = (m01 + m10) / s;
+            laserQuat.y = 0.25f * s;
+            laserQuat.z = (m12 + m21) / s;
+        }
+        else
+        {
+            f32 s = 2.0f * sqrtf(1.0f + m22 - m00 - m11);
+            laserQuat.w = (m10 - m01) / s;
+            laserQuat.x = (m02 + m20) / s;
+            laserQuat.y = (m12 + m21) / s;
+            laserQuat.z = 0.25f * s;
+        }
+    }
+
+    // Apply 90-degree rotation around X-axis to match laser model orientation
+    Vec4 rot90X = {0.7071067f, 0.0f, 0.0f, 0.7071067f}; // sin(45°), 0, 0, cos(45°)
+    laserQuat = quatMul(laserQuat, rot90X);
+
+    ((Vec4*)fields[LASER_ROTATION])[localIdx] = laserQuat;
 
     // Find and lock in the correct laser model once — search for "enchanted-crystal"
     static u32 s_laserModelId = (u32)-1;

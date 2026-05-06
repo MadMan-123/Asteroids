@@ -31,7 +31,7 @@ DSAPI void      laserInit(Archetype *arch);
 DSAPI void      laserUpdate(Archetype *arch, f32 dt);
 DSAPI void      laserDestroy(void);
 DSAPI Archetype *laserGetArchetype(void);
-DSAPI void      laserFire(Vec3 position, Vec3 direction);
+DSAPI void      laserFire(Vec3 position, Vec3 direction, Vec4 cameraOrientation);
 DSAPI void      laserCheckCollisions(Archetype *asteroids);
 
 DSAPI void druidGetECSSystem_Laser(ECSSystemPlugin *out);

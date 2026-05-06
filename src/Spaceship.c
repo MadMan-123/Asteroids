@@ -6,7 +6,7 @@
 // which would create duplicate dllexport symbols across .obj files
 extern void asteroidSetPlayerPos(Vec3 pos);
 extern f32  asteroidConsumePlayerHit(Vec3 *outPush);
-extern void laserFire(Vec3 position, Vec3 direction);
+extern void laserFire(Vec3 position, Vec3 direction, Vec4 cameraOrientation);
 extern void gameSignalQuit(void);
 
 DEFINE_ARCHETYPE(Spaceship, SPACESHIP_FIELDS)
@@ -231,19 +231,19 @@ void shipUpdate(Archetype *arch, f32 dt)
     if (fireR2 > 0.3f && s_fireCooldown == 0.0f)
     {
         Vec3 shipPos = {PosX[0], PosY[0], PosZ[0]};
-        Vec3 fwd     = quatRotateVec3(Rot[0], v3Forward);
-        Vec3 right   = quatRotateVec3(Rot[0], v3Right);
 
-        Vec3 muzzle = {
-            shipPos.x + fwd.x * 2.0f,
-            shipPos.y + fwd.y * 2.0f,
-            shipPos.z + fwd.z * 2.0f,
-        };
-        Vec3 offset = v3Add(muzzle, v3Scale(right, s_fireSign * 5.0f));
+        // Use camera orientation so lasers always travel where the player looks
+        Vec4 camOri = (runtime && runtime->camera) ? runtime->camera->orientation : Rot[0];
+        Vec3 camFwd   = quatRotateVec3(camOri, v3Forward);
+        Vec3 camRight = quatRotateVec3(camOri, v3Right);
+
+        // Small cosmetic wing offset so both barrels are visible, doesn't affect aim
+        Vec3 muzzle = v3Add(shipPos, v3Scale(camFwd,   5.0f));
+        muzzle      = v3Add(muzzle,  v3Scale(camRight, s_fireSign * 1.5f));
         s_fireSign  = -s_fireSign;
 
-        gameAudioLaser(offset);
-        laserFire(offset, fwd);
+        gameAudioLaser(muzzle);
+        laserFire(muzzle, camFwd, camOri);
         s_fireCooldown = FIRE_COOLDOWN;
     }
 }
