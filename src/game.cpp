@@ -313,17 +313,34 @@ static void gameRender(f32 dt)
     rendererDefaultArchetypeRender(&g_laserArch, renderer);
     rendererDefaultArchetypeRender(&g_crystalArch, renderer);
 
-    // Feed ship position into the deferred lighting shader as u_lightPos
+    // Feed light positions into the deferred lighting shader
     if (runtime && runtime->lightingShader)
     {
-        static i32 s_uLightPos = -2;
+        static i32 s_uLightPos       = -2;
+        static i32 s_uCrystalLights  = -2;
+        static i32 s_uCrystalCount   = -2;
         if (s_uLightPos == -2)
-            s_uLightPos = glGetUniformLocation(runtime->lightingShader, "u_lightPos");
-        if (s_uLightPos >= 0)
         {
-            Vec3 sp = shipGetPos();
             glUseProgram(runtime->lightingShader);
+            s_uLightPos      = glGetUniformLocation(runtime->lightingShader, "u_lightPos");
+            s_uCrystalLights = glGetUniformLocation(runtime->lightingShader, "u_crystalLights");
+            s_uCrystalCount  = glGetUniformLocation(runtime->lightingShader, "u_crystalLightCount");
+        }
+
+        Vec3 sp = shipGetPos();
+        glUseProgram(runtime->lightingShader);
+
+        if (s_uLightPos >= 0)
             glUniform3f(s_uLightPos, sp.x, sp.y, sp.z);
+
+        if (s_uCrystalLights >= 0)
+        {
+            Vec3 crystalPositions[8];
+            u32  crystalCount = crystalGetNearestLights(sp, crystalPositions, 8);
+            if (s_uCrystalCount >= 0)
+                glUniform1i(s_uCrystalCount, (i32)crystalCount);
+            if (crystalCount > 0)
+                glUniform3fv(s_uCrystalLights, (i32)crystalCount, (f32*)crystalPositions);
         }
     }
 

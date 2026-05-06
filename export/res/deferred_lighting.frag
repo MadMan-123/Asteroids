@@ -19,7 +19,9 @@ layout (std140, binding = 0) uniform CoreShaderData
     mat4 projection;
 };
 
-uniform vec3 u_lightPos;   // ship position — updated every frame from game code
+uniform vec3  u_lightPos;                    // ship position — updated every frame from game code
+uniform vec3  u_crystalLights[8];            // nearest crystal positions
+uniform int   u_crystalLightCount;
 
 const float PI = 3.14159265359;
 
@@ -102,6 +104,27 @@ void main()
 
         float attenuation = 1.0 / (1.0 + 0.005 * dist * dist);
         vec3 lightColor = vec3(0.9, 0.95, 1.0) * 4.0 * attenuation;
+
+        float NDF = distributionGGX(N, H, roughnessVal);
+        float G   = geometrySmith(N, V, L, roughnessVal);
+        vec3  F   = fresnelSchlick(max(dot(H, V), 0.0), F0);
+
+        vec3 specular = NDF * G * F / max(4.0 * NdotV * NdotL + 0.0001, 0.0001);
+        vec3 kD = (vec3(1.0) - F) * (1.0 - metallicVal);
+        Lo += (kD * albedo / PI + specular) * lightColor * NdotL;
+    }
+
+    // Crystal point lights — teal-green glow, short range
+    for (int i = 0; i < u_crystalLightCount; i++)
+    {
+        vec3 toLight = u_crystalLights[i] - FragPos;
+        float dist   = length(toLight);
+        vec3 L = normalize(toLight);
+        vec3 H = normalize(V + L);
+        float NdotL = max(dot(N, L), 0.0);
+
+        float attenuation = 1.0 / (1.0 + 0.02 * dist * dist);
+        vec3 lightColor = vec3(0.2, 0.9, 0.6) * 12.0 * attenuation;
 
         float NDF = distributionGGX(N, H, roughnessVal);
         float G   = geometrySmith(N, V, L, roughnessVal);

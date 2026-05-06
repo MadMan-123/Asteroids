@@ -29,6 +29,7 @@ DSAPI void         crystalDestroy(void);
 DSAPI Archetype   *crystalGetArchetype(void);
 DSAPI void         crystalSpawn(Vec3 position, f32 scale);
 DSAPI void         crystalCheckCollection(f32 playerX, f32 playerY, f32 playerZ);
+DSAPI u32          crystalGetNearestLights(Vec3 playerPos, Vec3 *outPos, u32 maxCount);
 
 #ifdef __cplusplus
 }

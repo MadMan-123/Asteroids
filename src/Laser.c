@@ -104,11 +104,7 @@ void laserFire(Vec3 position, Vec3 direction)
                 if (m->materialCount > 0)
                 {
                     Material *mat = resGetMaterial(m->materialIndices[0]);
-                    if (mat)
-                    {
-                        mat->emissive = 8.0f;
-                        mat->colour   = (Vec3){0.4f, 0.9f, 1.0f};
-                    }
+                    if (mat) mat->emissive = 8.0f;
                 }
                 break;
             }

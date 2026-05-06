@@ -2,6 +2,7 @@
 #include "Crystal.h"
 #include "GameAudio.h"
 #include <math.h>
+#include <string.h>
 
 #define COLLECTION_RADIUS   40.0f
 #define CRYSTAL_SPIN_RATE    0.5f
@@ -11,6 +12,7 @@ DEFINE_ARCHETYPE(Crystal, CRYSTAL_FIELDS)
 static Archetype *s_arch        = NULL;
 static b8         s_emissiveSet = 0;
 static u32        s_collected   = 0;
+static u32        s_modelId     = (u32)-1;
 
 static const Vec3 s_spinAxis = { 0.577f, 0.577f, 0.577f };
 
@@ -19,6 +21,19 @@ void crystalInit(Archetype *arch)
     s_arch        = arch;
     s_emissiveSet = 0;
     s_collected   = 0;
+    s_modelId     = (u32)-1;
+
+    // Find the crystal model by name once at init
+    for (u32 id = 0; id < 4096; id++)
+    {
+        Model *m = resGetModel(id);
+        if (!m || !m->name) break;
+        if (strstr(m->name, "enchanted-crystal") || strstr(m->name, "crystal"))
+        {
+            s_modelId = id;
+            break;
+        }
+    }
 }
 
 void crystalUpdate(Archetype *arch, f32 dt)
@@ -99,10 +114,12 @@ void crystalSpawn(Vec3 position, f32 scale)
     ((Vec3 *)fields[CRYSTAL_SCALE]   )[localIdx] = (Vec3){ scale, scale, scale };
     ((Vec4 *)fields[CRYSTAL_ROTATION])[localIdx] = quatNormalize(initRot);
 
-    if (!s_emissiveSet)
+    if (s_modelId != (u32)-1)
+        ((u32 *)fields[CRYSTAL_MODEL_ID])[localIdx] = s_modelId;
+
+    if (!s_emissiveSet && s_modelId != (u32)-1)
     {
-        u32 modelId = ((u32 *)fields[CRYSTAL_MODEL_ID])[localIdx];
-        Model *m = resGetModel(modelId);
+        Model *m = resGetModel(s_modelId);
         if (m && m->materialCount > 0)
         {
             Material *mat = resGetMaterial(m->materialIndices[0]);
@@ -141,6 +158,61 @@ void crystalCheckCollection(f32 playerX, f32 playerY, f32 playerZ)
             }
         }
     }
+}
+
+u32 crystalGetNearestLights(Vec3 playerPos, Vec3 *outPos, u32 maxCount)
+{
+    if (!s_arch || maxCount == 0) return 0;
+
+    f32  bestDistSq[8] = {0};
+    Vec3 bestPos[8]    = {{0}};
+    u32  found         = 0;
+    f32  worstDistSq   = 0.0f;
+    u32  worstIdx      = 0;
+
+    for (u32 c = 0; c < s_arch->activeChunkCount; c++)
+    {
+        void **fields = getArchetypeFields(s_arch, c);
+        if (!fields) continue;
+        u32  count = s_arch->arena[c].count;
+        b8  *alive = (b8  *)fields[CRYSTAL_ALIVE];
+        f32 *posX  = (f32 *)fields[CRYSTAL_POSITION_X];
+        f32 *posY  = (f32 *)fields[CRYSTAL_POSITION_Y];
+        f32 *posZ  = (f32 *)fields[CRYSTAL_POSITION_Z];
+
+        for (u32 i = 0; i < count; i++)
+        {
+            if (!alive[i]) continue;
+            f32 dx  = posX[i] - playerPos.x;
+            f32 dy  = posY[i] - playerPos.y;
+            f32 dz  = posZ[i] - playerPos.z;
+            f32 dSq = dx*dx + dy*dy + dz*dz;
+
+            if (found < maxCount)
+            {
+                bestDistSq[found] = dSq;
+                bestPos[found]    = (Vec3){posX[i], posY[i], posZ[i]};
+                found++;
+                if (found == maxCount)
+                {
+                    worstDistSq = bestDistSq[0]; worstIdx = 0;
+                    for (u32 j = 1; j < found; j++)
+                        if (bestDistSq[j] > worstDistSq) { worstDistSq = bestDistSq[j]; worstIdx = j; }
+                }
+            }
+            else if (dSq < worstDistSq)
+            {
+                bestDistSq[worstIdx] = dSq;
+                bestPos[worstIdx]    = (Vec3){posX[i], posY[i], posZ[i]};
+                worstDistSq = bestDistSq[0]; worstIdx = 0;
+                for (u32 j = 1; j < found; j++)
+                    if (bestDistSq[j] > worstDistSq) { worstDistSq = bestDistSq[j]; worstIdx = j; }
+            }
+        }
+    }
+
+    for (u32 i = 0; i < found && i < maxCount; i++) outPos[i] = bestPos[i];
+    return found;
 }
 
 static void crystalInitPlugin(void) {}
