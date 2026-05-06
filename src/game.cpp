@@ -7,13 +7,22 @@
 #include <math.h>
 #include <stdlib.h>
 
+// PSX Effects structure
+typedef struct {
+    u32 shader;
+    u32 quadVAO, quadVBO;
+    f32 pixelSize;
+    f32 colorBits;
+    f32 ditherStrength;
+} PSXEffects;
+
 static Archetype g_asteroidArch = {0};
 static Archetype g_shipArch     = {0};
 static Archetype g_laserArch    = {0};
 static Archetype g_crystalArch  = {0};
 
-
-static u32 g_bloomCapFBO      = 0;   // FBO wrapping the capture texture
+// PSX effects system
+static PSXEffects g_psxFX = {0};static u32 g_bloomCapFBO      = 0;   // FBO wrapping the capture texture
 static u32 g_bloomCapTex      = 0;   // full-res screen capture
 static u32 g_bloomPingFBO[2]  = {0, 0};
 static u32 g_bloomPingTex[2]  = {0, 0};
@@ -163,6 +172,111 @@ static void bloomApply(i32 w, i32 h)
     glEnable(GL_DEPTH_TEST);
 }
 
+// PSX Effects functions (inlined to avoid linking issues)
+static PSXEffects psxEffectsCreate(void)
+{
+    PSXEffects fx = {0};
+    fx.shader = createGraphicsProgram("./res/psx_effect.vert", "./res/psx_effect.frag");
+    if (!fx.shader) {
+        ERROR("PSXEffects: failed to load shader");
+        return fx;
+    }
+
+    // Create fullscreen quad
+    f32 quadVertices[] = {
+        -1.0f,  1.0f, 0.0f, 1.0f,
+        -1.0f, -1.0f, 0.0f, 0.0f,
+         1.0f,  1.0f, 1.0f, 1.0f,
+         1.0f, -1.0f, 1.0f, 0.0f,
+    };
+
+    glGenVertexArrays(1, &fx.quadVAO);
+    glGenBuffers(1, &fx.quadVBO);
+    glBindVertexArray(fx.quadVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, fx.quadVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(f32), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(f32), (void*)(2 * sizeof(f32)));
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    fx.pixelSize = 1.0f;
+    fx.colorBits = 5.0f;
+    fx.ditherStrength = 0.5f;
+
+    INFO("PSXEffects: initialized");
+    return fx;
+}
+
+static void psxEffectsDestroy(PSXEffects *fx)
+{
+    if (!fx) return;
+    if (fx->shader)    freeShader(fx->shader);
+    if (fx->quadVAO)   glDeleteVertexArrays(1, &fx->quadVAO);
+    if (fx->quadVBO)   glDeleteBuffers(1, &fx->quadVBO);
+    INFO("PSXEffects: destroyed");
+}
+
+static void psxEffectsApply(PSXEffects *fx, u32 inputTexture, u32 outputFBO)
+{
+    if (!fx || !fx->shader) return;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, outputFBO);
+    glUseProgram(fx->shader);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, inputTexture);
+    glUniform1i(glGetUniformLocation(fx->shader, "inputTexture"), 0);
+
+    glUniform1f(glGetUniformLocation(fx->shader, "u_pixelSize"), fx->pixelSize);
+    glUniform1f(glGetUniformLocation(fx->shader, "u_colorBits"), fx->colorBits);
+    glUniform1f(glGetUniformLocation(fx->shader, "u_ditherStrength"), fx->ditherStrength);
+
+    glBindVertexArray(fx->quadVAO);
+    glDisable(GL_DEPTH_TEST);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glEnable(GL_DEPTH_TEST);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+static void psxEffectsSetPixelSize(PSXEffects *fx, f32 size)
+{
+    if (fx) fx->pixelSize = size;
+}
+
+static void psxEffectsSetColorBits(PSXEffects *fx, f32 bits)
+{
+    if (fx) fx->colorBits = bits;
+}
+
+static void psxEffectsSetDitherStrength(PSXEffects *fx, f32 strength)
+{
+    if (fx) fx->ditherStrength = strength;
+}
+
+static void psxEffectsApplyToScreen(i32 w, i32 h)
+{
+    if (!g_psxFX.shader || !g_psxFX.quadVAO) return;
+
+    // Capture current screen to bloom capture texture
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_bloomCapFBO);
+    glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Apply PSX effects using the captured texture
+    glDisable(GL_DEPTH_TEST);
+    glViewport(0, 0, w, h);
+    glClear(GL_COLOR_BUFFER_BIT);
+    psxEffectsApply(&g_psxFX, g_bloomCapTex, 0);
+    glEnable(GL_DEPTH_TEST);
+}
+
 static b8 g_requestQuit = 0;
 extern "C" void gameSignalQuit(void) { g_requestQuit = 1; }
 static b8 gameRequestsQuit(void) { b8 r = g_requestQuit; g_requestQuit = 0; return r; }
@@ -284,6 +398,12 @@ static void gameInit(const c8 *projectDir)
 
         asteroidSpawn(pos, vel);
     }
+
+    // Initialize PSX effects
+    g_psxFX = psxEffectsCreate();
+    psxEffectsSetPixelSize(&g_psxFX, 1.5f);      // Moderate pixelation
+    psxEffectsSetColorBits(&g_psxFX, 6.0f);      // 6-bit color (less aggressive than 5)
+    psxEffectsSetDitherStrength(&g_psxFX, 0.4f); // Subtle dithering
 }
 
 static void gameUpdate(f32 dt)
@@ -352,11 +472,14 @@ static void gameRender(f32 dt)
         i32 h = (i32)display->screenHeight;
         if (!g_bloomCapTex) bloomInit(w, h);
         bloomApply(w, h);
+        psxEffectsApplyToScreen(w, h);
     }
 }
 
 static void gameDestroy(void)
 {
+    psxEffectsDestroy(&g_psxFX);
+
     if (g_bloomCapFBO)     { glDeleteFramebuffers(1,  &g_bloomCapFBO);     g_bloomCapFBO    = 0; }
     if (g_bloomCapTex)     { glDeleteTextures(1,      &g_bloomCapTex);     g_bloomCapTex    = 0; }
     for (u32 i = 0; i < 2; i++)

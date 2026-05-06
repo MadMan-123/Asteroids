@@ -5,6 +5,7 @@ in vec2 tc;
 in vec3 Normal;
 in vec3 FragPos;
 in mat3 TBN;
+noperspective in float affineW; // PS1-style affine texture mapping
 
 // Material textures (bound by updateMaterial)
 uniform sampler2D albedoTexture;    // unit 0
@@ -18,6 +19,7 @@ uniform float metallic;
 uniform float transparency;
 uniform vec3  colour;
 uniform float emissive;
+uniform bool enableAffineMapping = true; // PS1-style texture warping
 
 // GBuffer MRT outputs
 layout (location = 0) out vec4 gPosition;   // xyz = world pos, w = metallic

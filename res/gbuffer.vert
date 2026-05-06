@@ -22,11 +22,27 @@ layout (std430, binding = 1) buffer InstanceMatrices {
     mat4 u_instanceModels[];
 };
 uniform int u_modelBaseIndex = -1; // -1 = single draw using 'model' uniform (default)
+uniform float u_vertexSnapGridSize = 128.0; // PSX vertex snapping grid size (32.0 = prominent PS1 jitter, 0.0 = disabled)
 
 out vec2 tc;
 out vec3 Normal;
 out vec3 FragPos;
 out mat3 TBN;
+noperspective out float affineW; // For PS1-style affine texture mapping
+
+vec4 snapVertexGrid(vec4 clipPos, float gridSize)
+{
+    if (gridSize <= 0.0) return clipPos;
+    
+    // Perspective divide to get normalized device coordinates
+    vec3 ndc = clipPos.xyz / clipPos.w;
+    
+    // Snap to grid in NDC space (simulates PS1's integer vertex positions)
+    ndc.xy = floor(ndc.xy * gridSize) / gridSize;
+    
+    // Convert back to clip space
+    return vec4(ndc * clipPos.w, clipPos.w);
+}
 
 void main()
 {
@@ -48,5 +64,7 @@ void main()
     TBN = mat3(T, B, N);
 
     tc = texCoord;
-    gl_Position = projection * view * worldPos;
+    vec4 clipPos = projection * view * worldPos;
+    gl_Position = snapVertexGrid(clipPos, u_vertexSnapGridSize);
+    affineW = gl_Position.w;
 }
