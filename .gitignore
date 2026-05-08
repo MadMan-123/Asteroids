@@ -38,6 +38,9 @@ Thumbs.db
 deps/bin/
 deps/lib/
 
+# Export directories
+export*/
+
 # Runtime files
 __play_snapshot__.drsc
 *.drsc
