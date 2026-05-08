@@ -11,6 +11,9 @@ bin/
 *.ilk
 *.pdb
 
+# Cache directories
+.cache/
+
 # IDE
 .vs/
 .vscode/
